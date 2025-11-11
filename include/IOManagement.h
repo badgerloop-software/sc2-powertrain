@@ -6,10 +6,9 @@
 #include "adc.h"
 
 // Inputs
-#define BATT_NEG_CONT_MCU           PB3
 #define ESTOP_MCU                   PA9
 #define BATT_POS_CONT_MCU           PA10
-#define PPC1_SUPP_INVALID           PA12
+#define PPC1_SUPP_INVALID           PB1
 #define PPC1_DCDC_INVALID           PB0
 #define MPPT_CONT_MCU               PB5
 #define MC_CONT_MCU                 PB4
@@ -21,7 +20,6 @@
 
 
 struct Digital_Data {
-    bool batt_neg_cont : 1;     // input
     bool estop_mcu : 1;         // input
     bool batt_pos_cont : 1;     // input
     bool ppc1_supp_invalid : 1; // input

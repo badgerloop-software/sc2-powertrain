@@ -13,7 +13,6 @@ STM32TimerInterrupt IOTimer(TIM2);
 
 void initIO() {
     // Initalize digital pins
-    pinMode(BATT_NEG_CONT_MCU, INPUT);
     pinMode(ESTOP_MCU, INPUT);
     pinMode(BATT_POS_CONT_MCU, INPUT);
     pinMode(PPC1_SUPP_INVALID, INPUT);
@@ -33,7 +32,6 @@ void initIO() {
 }
 
 void readIO() {
-    digital_data.batt_neg_cont = digitalRead(BATT_NEG_CONT_MCU);
     digital_data.estop_mcu = digitalRead(ESTOP_MCU);
     digital_data.batt_pos_cont = digitalRead(BATT_POS_CONT_MCU);
     digital_data.ppc1_supp_invalid = digitalRead(PPC1_SUPP_INVALID);
