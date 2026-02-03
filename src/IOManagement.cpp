@@ -32,18 +32,19 @@ void initIO() {
 }
 
 void readIO() {
-    digital_data.estop_mcu = digitalRead(ESTOP_MCU);
-    digital_data.batt_pos_cont = digitalRead(BATT_POS_CONT_MCU);
-    digital_data.ppc1_supp_invalid = digitalRead(PPC1_SUPP_INVALID);
-    digital_data.ppc1_dcdc_invalid = digitalRead(PPC1_DCDC_INVALID);
-    digital_data.mppt_cont_mcu = digitalRead(MPPT_CONT_MCU);
-    digital_data.mc_cont_mcu = digitalRead(MC_CONT_MCU);
+    digital_data.estop_mcu = 1;
+    digital_data.batt_pos_cont = 1;
+    digital_data.ppc1_supp_invalid = 1;
+    digital_data.ppc1_dcdc_invalid = 1;
+    digital_data.mppt_cont_mcu = 1;
+    digital_data.mc_cont_mcu = 1;
+    digital_data.mcu_batt_en = 1;
 
-    i_12v = readADC(ADC_CHANNEL_12);        // PA7
-    v_12v = readADC(ADC_CHANNEL_11);        // PA6
-    supp_i = readADC(ADC_CHANNEL_9);        // PA4
-    batt_i = readADC(ADC_CHANNEL_6);        // PA1
-    supp_v = readADC(ADC_CHANNEL_5);        // PA0
+    i_12v = 32;        // PA7
+    v_12v = 32;        // PA6
+    supp_i = 32;        // PA4
+    batt_i = 32;        // PA1
+    supp_v = 32;        // PA0
 }
 
 void set_mcu_batt_en(bool batt_en) {
