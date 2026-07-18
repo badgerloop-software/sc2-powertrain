@@ -22,6 +22,7 @@ void CANPowertrain::sendPowertrainData() {
     this->sendMessage(0x502, (void*)&supp_i, sizeof(float));
     this->sendMessage(0x503, (void*)&batt_i, sizeof(float));
     this->sendMessage(0x504, (void*)&supp_v, sizeof(float));
-    this->sendMessage(0x505, (void*)&digital_data, sizeof(digital_data));
+    uint8_t estop = digital_data.estop_mcu ? 1 : 0;
+    this->sendMessage(0x505, (void*)&estop, sizeof(estop));
 
 }
