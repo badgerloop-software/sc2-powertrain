@@ -93,7 +93,8 @@ void CANPowertrain::sendPowertrainData() {
     this->sendMessage(0x502, (void*)&supp_i, sizeof(float));
     this->sendMessage(0x503, (void*)&batt_i, sizeof(float));
     this->sendMessage(0x504, (void*)&supp_v, sizeof(float));
-    uint8_t status = (digital_data.estop_mcu || bps_fault) ? 0x00 : 0x01;
+    const bool estop_pressed = !digital_data.estop_mcu;
+    uint8_t status = (estop_pressed || bps_fault) ? 0x00 : 0x01;
     this->sendMessage(POWERTRAIN_FAULT_CAN_ID, (void*)&status, sizeof(status));
 }
 
