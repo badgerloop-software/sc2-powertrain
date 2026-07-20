@@ -21,7 +21,7 @@ void initIO() {
     
     // Initialize MCU_BATT_EN as push-pull output with explicit mode
     pinMode(MCU_BATT_EN, OUTPUT);
-    digitalWrite(MCU_BATT_EN, 1);
+    set_mcu_batt_en(true);
     
     pinMode(MPPT_CONT_MCU, INPUT);
     pinMode(MC_CONT_MCU, INPUT);
