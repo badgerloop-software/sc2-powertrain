@@ -18,6 +18,9 @@ void initIO() {
     pinMode(BATT_POS_CONT_MCU, INPUT);
     pinMode(PPC1_SUPP_INVALID, INPUT);
     pinMode(PPC1_DCDC_INVALID, INPUT);
+
+    // Read the active-low estop before the first CAN status is transmitted.
+    digital_data.estop_mcu = digitalRead(ESTOP_MCU);
     
     // Initialize MCU_BATT_EN as push-pull output with explicit mode
     pinMode(MCU_BATT_EN, OUTPUT);

@@ -7,6 +7,7 @@ CANPowertrain canPowertrain(CAN1, DEF);
 void setup() {
   Serial.begin(115200);
   initIO();
+  canPowertrain.initializePersistentFault();
 }
 
 void loop() {
