@@ -15,6 +15,10 @@ void CANPowertrain::readHandler(CAN_message_t msg) {
             decodeUint16(msg.buf[0], msg.buf[1]);
         bps_telemetry.highest_temperature =
             decodeUint16(msg.buf[2], msg.buf[3]);
+        bps_telemetry.charge_relay_on =
+            (msg.buf[4] & BPS_CHARGE_RELAY_ON_MASK) != 0;
+        bps_telemetry.discharge_relay_on =
+            (msg.buf[4] & BPS_DISCHARGE_RELAY_ON_MASK) != 0;
         received_bps_temperature = true;
         updateBpsFault();
     } else if (msg.id == BPS_ELECTRICAL_CAN_ID &&
@@ -41,11 +45,9 @@ float CANPowertrain::decodeCellVoltage(uint8_t byte_1, uint8_t byte_2) const {
 }
 
 void CANPowertrain::updateBpsFault() {
-    if (!received_bps_temperature || !received_bps_electrical) {
-        return;
-    }
-
-    bps_fault = isBpsTelemetryOutOfRange();
+    // Once asserted, a BPS fault cannot clear in software. The BMS conditions
+    // must first become healthy and then the whole system must be restarted.
+    bps_fault = bps_fault || isBpsTelemetryOutOfRange();
 
 #if BPS_LATCH_DISABLE_BATT_EN
     if (bps_fault && !battery_disable_latched) {
@@ -56,21 +58,32 @@ void CANPowertrain::updateBpsFault() {
 }
 
 bool CANPowertrain::isBpsTelemetryOutOfRange() const {
-    const bool voltage_fault =
-        bps_telemetry.highest_cell_voltage < BPS_CELL_VOLTAGE_MIN_V ||
-        bps_telemetry.highest_cell_voltage > BPS_CELL_VOLTAGE_MAX_V ||
-        bps_telemetry.lowest_cell_voltage < BPS_CELL_VOLTAGE_MIN_V ||
-        bps_telemetry.lowest_cell_voltage > BPS_CELL_VOLTAGE_MAX_V;
+    bool voltage_fault = false;
+    bool current_fault = false;
+    if (received_bps_electrical) {
+        voltage_fault =
+            bps_telemetry.highest_cell_voltage < BPS_CELL_VOLTAGE_MIN_V ||
+            bps_telemetry.highest_cell_voltage > BPS_CELL_VOLTAGE_MAX_V ||
+            bps_telemetry.lowest_cell_voltage < BPS_CELL_VOLTAGE_MIN_V ||
+            bps_telemetry.lowest_cell_voltage > BPS_CELL_VOLTAGE_MAX_V;
+        current_fault =
+            bps_telemetry.pack_current > BPS_PACK_CURRENT_MAX_A;
+    }
 
     // Current and temperature arrive as unsigned values, so their lower bound
     // is inherently zero.
-    const bool current_fault =
-        bps_telemetry.pack_current > BPS_PACK_CURRENT_MAX_A;
-    const bool temperature_fault =
-        bps_telemetry.lowest_temperature > BPS_TEMPERATURE_MAX_C ||
-        bps_telemetry.highest_temperature > BPS_TEMPERATURE_MAX_C;
+    bool temperature_fault = false;
+    bool relay_fault = false;
+    if (received_bps_temperature) {
+        temperature_fault =
+            bps_telemetry.lowest_temperature > BPS_TEMPERATURE_MAX_C ||
+            bps_telemetry.highest_temperature > BPS_TEMPERATURE_MAX_C;
+        relay_fault =
+            !bps_telemetry.charge_relay_on ||
+            !bps_telemetry.discharge_relay_on;
+    }
 
-    return voltage_fault || current_fault || temperature_fault;
+    return voltage_fault || current_fault || temperature_fault || relay_fault;
 }
 
 void CANPowertrain::sendPowertrainData() {
@@ -80,8 +93,8 @@ void CANPowertrain::sendPowertrainData() {
     this->sendMessage(0x502, (void*)&supp_i, sizeof(float));
     this->sendMessage(0x503, (void*)&batt_i, sizeof(float));
     this->sendMessage(0x504, (void*)&supp_v, sizeof(float));
-    uint8_t fault = (digital_data.estop_mcu || bps_fault) ? 0x01 : 0x00;
-    this->sendMessage(POWERTRAIN_FAULT_CAN_ID, (void*)&fault, sizeof(fault));
+    uint8_t status = (digital_data.estop_mcu || bps_fault) ? 0x00 : 0x01;
+    this->sendMessage(POWERTRAIN_FAULT_CAN_ID, (void*)&status, sizeof(status));
 }
 
 const BpsTelemetry& CANPowertrain::getBpsTelemetry() const {

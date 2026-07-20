@@ -11,6 +11,8 @@ struct BpsTelemetry {
     uint16_t pack_current;
     uint16_t lowest_temperature;
     uint16_t highest_temperature;
+    bool charge_relay_on;
+    bool discharge_relay_on;
 };
 
 class CANPowertrain : public CANManager {
