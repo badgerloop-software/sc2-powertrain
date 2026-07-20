@@ -17,7 +17,7 @@ class CANPowertrain : public CANManager {
     private:
         BpsTelemetry bps_telemetry;
         bool bps_fault;
-        bool powertrain_fault_latched;
+        bool bps_fault_latched;
         bool received_bps_temperature;
         bool received_bps_electrical;
         bool bps_startup_grace_started;
@@ -29,10 +29,9 @@ class CANPowertrain : public CANManager {
         float decodeCellVoltage(uint8_t byte_1, uint8_t byte_2) const;
         bool isBpsTelemetryOutOfRange() const;
         bool isFaultClearCommand(const CAN_message_t& msg) const;
-        bool areLiveConditionsHealthy() const;
         bool shouldMonitorBpsFaults();
         void handleFaultClearCommand();
-        void latchPowertrainFault();
+        void latchBpsFault();
         void updateBpsFault();
 
     public:

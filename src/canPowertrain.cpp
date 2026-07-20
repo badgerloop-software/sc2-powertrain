@@ -9,8 +9,8 @@ constexpr uint8_t FAULT_STATE_CLEAR = 0x00;
 constexpr uint8_t FAULT_STATE_LATCHED = 0xA5;
 constexpr uint8_t FAULT_STATE_CLEAR_ON_RESTART = 0x5A;
 
-constexpr uint8_t FAULT_CLEAR_PREFIX[FAULT_CLEAR_PREFIX_LENGTH] = {
-    0x03, 0x7F, 0x20, 0x22
+constexpr uint8_t FAULT_CLEAR_PAYLOAD[FAULT_CLEAR_CAN_DLC] = {
+    0x03, 0x7F, 0x20, 0x22, 0x00, 0x00, 0x00, 0x00
 };
 }
 
@@ -18,7 +18,7 @@ CANPowertrain::CANPowertrain(CAN_TypeDef* canPort, CAN_PINS pins, int frequency)
     : CANManager(canPort, pins, frequency),
       bps_telemetry{},
       bps_fault(false),
-      powertrain_fault_latched(false),
+      bps_fault_latched(false),
       received_bps_temperature(false),
       received_bps_electrical(false),
       bps_startup_grace_started(false),
@@ -33,16 +33,23 @@ void CANPowertrain::initializePersistentFault() {
     if (!storage_initialized) {
         EEPROM.update(FAULT_EEPROM_STATE_ADDRESS, FAULT_STATE_CLEAR);
         EEPROM.update(FAULT_EEPROM_MAGIC_ADDRESS, FAULT_EEPROM_MAGIC);
-        powertrain_fault_latched = false;
+        bps_fault_latched = false;
     } else {
         const uint8_t stored_state =
             EEPROM.read(FAULT_EEPROM_STATE_ADDRESS);
         if (stored_state == FAULT_STATE_CLEAR_ON_RESTART) {
             EEPROM.update(FAULT_EEPROM_STATE_ADDRESS, FAULT_STATE_CLEAR);
-            powertrain_fault_latched = false;
+            bps_fault_latched = false;
         } else {
-            powertrain_fault_latched =
+            bps_fault_latched =
                 stored_state == FAULT_STATE_LATCHED;
+            if (!bps_fault_latched &&
+                stored_state != FAULT_STATE_CLEAR) {
+                EEPROM.update(
+                    FAULT_EEPROM_STATE_ADDRESS,
+                    FAULT_STATE_CLEAR
+                );
+            }
         }
     }
 
@@ -99,31 +106,20 @@ float CANPowertrain::decodeCellVoltage(uint8_t byte_1, uint8_t byte_2) const {
 
 bool CANPowertrain::isFaultClearCommand(const CAN_message_t& msg) const {
     if (msg.id != FAULT_CLEAR_CAN_ID ||
-        msg.len < FAULT_CLEAR_PREFIX_LENGTH) {
+        msg.len != FAULT_CLEAR_CAN_DLC) {
         return false;
     }
 
-    for (uint8_t i = 0; i < FAULT_CLEAR_PREFIX_LENGTH; ++i) {
-        if (msg.buf[i] != FAULT_CLEAR_PREFIX[i]) {
+    for (uint8_t i = 0; i < FAULT_CLEAR_CAN_DLC; ++i) {
+        if (msg.buf[i] != FAULT_CLEAR_PAYLOAD[i]) {
             return false;
         }
     }
     return true;
 }
 
-bool CANPowertrain::areLiveConditionsHealthy() const {
-    const bool estop_released = digital_data.estop_mcu;
-    const bool bps_data_ready =
-        received_bps_temperature && received_bps_electrical;
-    return estop_released &&
-           bps_data_ready &&
-           !isBpsTelemetryOutOfRange();
-}
-
 void CANPowertrain::handleFaultClearCommand() {
-    if (!persistent_fault_initialized ||
-        !powertrain_fault_latched ||
-        !areLiveConditionsHealthy()) {
+    if (!persistent_fault_initialized) {
         return;
     }
 
@@ -134,8 +130,8 @@ void CANPowertrain::handleFaultClearCommand() {
     clear_on_restart_armed = true;
 }
 
-void CANPowertrain::latchPowertrainFault() {
-    powertrain_fault_latched = true;
+void CANPowertrain::latchBpsFault() {
+    bps_fault_latched = true;
     if (persistent_fault_initialized) {
         EEPROM.update(FAULT_EEPROM_STATE_ADDRESS, FAULT_STATE_LATCHED);
     }
@@ -185,13 +181,13 @@ bool CANPowertrain::isBpsTelemetryOutOfRange() const {
 
 void CANPowertrain::sendPowertrainData() {
     const bool estop_pressed = !digital_data.estop_mcu;
-    const bool active_fault = estop_pressed || bps_fault;
-    if (active_fault &&
-        (!powertrain_fault_latched || clear_on_restart_armed)) {
-        latchPowertrainFault();
+    if (bps_fault && (!bps_fault_latched || clear_on_restart_armed)) {
+        latchBpsFault();
     }
+    const bool active_fault = estop_pressed || bps_fault_latched;
+    set_mcu_batt_en(!active_fault);
     uint8_t status =
-        powertrain_fault_latched ? POWERTRAIN_FAULT_MASK : 0x00;
+        active_fault ? POWERTRAIN_FAULT_MASK : 0x00;
 
     // TODO: send messages with their respective CAN IDs
     this->sendMessage(0x500, (void*)&i_12v, sizeof(float));
