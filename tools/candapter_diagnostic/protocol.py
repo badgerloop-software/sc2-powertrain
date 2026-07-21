@@ -8,7 +8,7 @@ import struct
 from typing import Any
 
 
-BPS_STATUS_CAN_ID = 0x100
+BPS_STATUS_CAN_ID = 0x101
 BPS_TEMPERATURE_CAN_ID = 0x108
 BPS_ELECTRICAL_CAN_ID = 0x109
 POWERTRAIN_FAULT_CAN_ID = 0x505
@@ -25,7 +25,77 @@ TEMPERATURE_MAX_C = 56.0
 CELL_VOLTAGE_SCALE_V = 0.0001
 PACK_CURRENT_ZERO_RAW = 0x8000
 PACK_CURRENT_SCALE_A = 0.1
-STATE_OF_CHARGE_SCALE_PERCENT = 0.1
+STATE_OF_CHARGE_SCALE_PERCENT = 0.5
+SOC_TREND_WINDOW_SECONDS = 60.0
+
+TIME_SERIES_SIGNALS = {
+    "pack_soc": {
+        "label": "Pack state of charge",
+        "unit": "%",
+        "can_id": BPS_STATUS_CAN_ID,
+        "field": "State of charge",
+    },
+    "pack_current": {
+        "label": "Absolute pack current",
+        "unit": "A",
+        "can_id": BPS_ELECTRICAL_CAN_ID,
+        "field": "Pack current",
+    },
+    "highest_cell_voltage": {
+        "label": "Highest cell voltage",
+        "unit": "V",
+        "can_id": BPS_ELECTRICAL_CAN_ID,
+        "field": "Highest cell voltage",
+    },
+    "lowest_cell_voltage": {
+        "label": "Lowest cell voltage",
+        "unit": "V",
+        "can_id": BPS_ELECTRICAL_CAN_ID,
+        "field": "Lowest cell voltage",
+    },
+    "lowest_temperature": {
+        "label": "Lowest pack temperature",
+        "unit": "°C",
+        "can_id": BPS_TEMPERATURE_CAN_ID,
+        "field": "Lowest temperature",
+    },
+    "highest_temperature": {
+        "label": "Highest pack temperature",
+        "unit": "°C",
+        "can_id": BPS_TEMPERATURE_CAN_ID,
+        "field": "Highest temperature",
+    },
+    "12v_current": {
+        "label": "12 V current",
+        "unit": "A",
+        "can_id": 0x500,
+        "field": "Value",
+    },
+    "12v_voltage": {
+        "label": "12 V voltage",
+        "unit": "V",
+        "can_id": 0x501,
+        "field": "Value",
+    },
+    "supplemental_current": {
+        "label": "Supplemental current",
+        "unit": "A",
+        "can_id": 0x502,
+        "field": "Value",
+    },
+    "battery_current": {
+        "label": "Battery current",
+        "unit": "A",
+        "can_id": 0x503,
+        "field": "Value",
+    },
+    "supplemental_voltage": {
+        "label": "Supplemental voltage",
+        "unit": "V",
+        "can_id": 0x504,
+        "field": "Value",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -69,13 +139,12 @@ def decode_frame(frame: CANFrame) -> dict[str, Any]:
 
     try:
         if frame.arbitration_id == BPS_STATUS_CAN_ID:
-            if frame.dlc != 8:
-                raise ValueError("expected DLC 8")
+            if frame.dlc < 5:
+                raise ValueError("expected DLC of at least 5")
             result["name"] = "BPS pack status"
             result["fields"] = {
                 "State of charge": (
-                    _u16_be(frame.data, 0)
-                    * STATE_OF_CHARGE_SCALE_PERCENT
+                    frame.data[4] * STATE_OF_CHARGE_SCALE_PERCENT
                 )
             }
         elif frame.arbitration_id == BPS_TEMPERATURE_CAN_ID:
@@ -135,6 +204,73 @@ def decode_frame(frame: CANFrame) -> dict[str, Any]:
         result["error"] = str(exc)
 
     return result
+
+
+def pack_soc_trend(
+    frames: list[CANFrame],
+    window_seconds: float = SOC_TREND_WINDOW_SECONDS,
+) -> dict[str, Any]:
+    """Classify the Pack SoC change over the latest rolling time window."""
+    if window_seconds <= 0:
+        raise ValueError("window_seconds must be positive")
+
+    samples = [
+        (
+            frame.timestamp,
+            frame.data[4] * STATE_OF_CHARGE_SCALE_PERCENT,
+        )
+        for frame in frames
+        if frame.arbitration_id == BPS_STATUS_CAN_ID and frame.dlc >= 5
+    ]
+    if len(samples) < 2:
+        return {"state": "UNKNOWN", "delta_percent": None}
+
+    samples.sort(key=lambda sample: sample[0])
+    latest_timestamp = samples[-1][0]
+    cutoff = latest_timestamp - window_seconds
+    recent_samples = [
+        sample for sample in samples if sample[0] >= cutoff
+    ]
+    if len(recent_samples) < 2:
+        return {"state": "UNKNOWN", "delta_percent": None}
+
+    delta = recent_samples[-1][1] - recent_samples[0][1]
+    if delta > 0:
+        state = "CHARGING"
+    elif delta < 0:
+        state = "DISCHARGING"
+    else:
+        state = "HOLDING"
+
+    return {"state": state, "delta_percent": delta}
+
+
+def decoded_time_series(
+    frames: list[CANFrame],
+    signal_key: str,
+) -> list[dict[str, float]]:
+    """Return timestamped numeric values for one known telemetry signal."""
+    if signal_key not in TIME_SERIES_SIGNALS:
+        raise ValueError(f"Unknown time-series signal: {signal_key}")
+
+    signal = TIME_SERIES_SIGNALS[signal_key]
+    points: list[dict[str, float]] = []
+    for frame in frames:
+        if frame.arbitration_id != signal["can_id"]:
+            continue
+        decoded = decode_frame(frame)
+        if decoded["error"]:
+            continue
+        value = decoded["fields"].get(signal["field"])
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            points.append(
+                {
+                    "timestamp": frame.timestamp,
+                    "value": float(value),
+                }
+            )
+
+    return sorted(points, key=lambda point: point["timestamp"])
 
 
 def fault_status_rows(latest: dict[int, CANFrame]) -> list[dict[str, Any]]:

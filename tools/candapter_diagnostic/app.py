@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 import time
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from candapter import CANdapter, CANdapterError
+from capture_store import list_captures, load_capture, save_capture
 from protocol import (
     BPS_ELECTRICAL_CAN_ID,
     BPS_STATUS_CAN_ID,
@@ -16,8 +19,11 @@ from protocol import (
     FAULT_CLEAR_CAN_ID,
     FAULT_CLEAR_PAYLOAD,
     POWERTRAIN_FAULT_CAN_ID,
+    TIME_SERIES_SIGNALS,
     decode_frame,
+    decoded_time_series,
     fault_status_rows,
+    pack_soc_trend,
     parse_hex_data,
 )
 
@@ -38,6 +44,16 @@ def disconnect() -> None:
     if adapter is not None:
         adapter.close()
     st.session_state.candapter = None
+
+
+@st.cache_data(show_spinner=False)
+def cached_load_capture(
+    path_text: str,
+    modified_time_ns: int,
+) -> list[CANFrame]:
+    """Load a capture until its file modification time changes."""
+    del modified_time_ns
+    return load_capture(Path(path_text))
 
 
 def format_decoded_fields(decoded: dict) -> str:
@@ -62,6 +78,8 @@ if "candapter" not in st.session_state:
     st.session_state.candapter = None
 if "event_log" not in st.session_state:
     st.session_state.event_log = []
+if "fault_capture_active" not in st.session_state:
+    st.session_state.fault_capture_active = False
 
 
 st.title("SC2 CAN Diagnostics")
@@ -120,6 +138,15 @@ st.markdown(
         font-weight: 750;
         line-height: 1;
     }
+    .charge-direction {
+        font-size: 1.35rem;
+        font-weight: 700;
+        margin-top: 0.45rem;
+    }
+    .charging {color: #22c55e;}
+    .discharging {color: #f59e0b;}
+    .holding {color: #3b82f6;}
+    .unknown {color: #9ca3af;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -192,10 +219,30 @@ if BPS_STATUS_CAN_ID in latest:
     soc_message = decode_frame(latest[BPS_STATUS_CAN_ID])
     if not soc_message["error"]:
         soc = soc_message["fields"].get("State of charge")
+soc_trend = pack_soc_trend(frames)
 
 fault_rows = fault_status_rows(latest)
 fault_count = sum(row["Status"] == "FAULT" for row in fault_rows)
 unknown_count = sum(row["Status"] == "UNKNOWN" for row in fault_rows)
+fault_active = fault_count > 0
+if fault_active and not st.session_state.fault_capture_active and frames:
+    try:
+        fault_capture_path = save_capture(
+            frames,
+            filename_prefix="fault_capture",
+        )
+        st.session_state.event_log.append(
+            f"Automatically saved {len(frames)} frames after fault "
+            f"detection to {fault_capture_path.name}"
+        )
+        st.warning(
+            "Fault detected: automatically saved "
+            f"{len(frames):,} recent frames as "
+            f"{fault_capture_path.name}."
+        )
+    except (OSError, ValueError) as exc:
+        st.error(f"Automatic fault capture failed: {exc}")
+st.session_state.fault_capture_active = fault_active
 
 metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 metric_1.metric("Connection", "Online" if adapter else "Offline")
@@ -203,8 +250,14 @@ metric_2.metric("Frames captured", len(frames))
 metric_3.metric("Active known faults", fault_count)
 metric_4.metric("Unknown statuses", unknown_count)
 
-status_tab, messages_tab, transmit_tab, decoder_tab = st.tabs(
-    ["Overview", "Live messages", "Send frame", "Decode frame"]
+status_tab, series_tab, messages_tab, transmit_tab, decoder_tab = st.tabs(
+    [
+        "Overview",
+        "Time series",
+        "Live messages",
+        "Send frame",
+        "Decode frame",
+    ]
 )
 
 with status_tab:
@@ -226,6 +279,20 @@ with status_tab:
 
     display_soc = max(0.0, min(100.0, soc)) if soc is not None else 0.0
     soc_text = f"{soc:.1f}%" if soc is not None else "—%"
+    direction = soc_trend["state"]
+    direction_class = direction.lower()
+    direction_label = {
+        "CHARGING": "↑ CHARGING",
+        "DISCHARGING": "↓ DISCHARGING",
+        "HOLDING": "— HOLDING",
+        "UNKNOWN": "… WAITING FOR TREND",
+    }[direction]
+    delta = soc_trend["delta_percent"]
+    trend_detail = (
+        f"Recent SoC change (60 s window): {delta:+.1f}%"
+        if delta is not None
+        else "Need at least two SoC samples"
+    )
     fill_color = (
         "#ef4444"
         if display_soc < 20
@@ -241,7 +308,11 @@ with status_tab:
             </div>
             <div>
                 <div class="battery-percent">{soc_text}</div>
-                <div>State of charge · 0x100 bytes 0–1</div>
+                <div>State of charge · 0x101 byte 4</div>
+                <div class="charge-direction {direction_class}">
+                    {direction_label}
+                </div>
+                <div>{trend_detail}</div>
             </div>
         </div>
         """,
@@ -360,6 +431,117 @@ with status_tab:
                         st.session_state.event_log[-8:]
                     ):
                         st.text(event)
+
+with series_tab:
+    st.subheader("Saved capture comparison")
+    save_col, buffer_col = st.columns([1, 2])
+    with save_col:
+        if st.button(
+            "Save current capture",
+            type="primary",
+            disabled=not frames,
+            width="stretch",
+        ):
+            try:
+                saved_path = save_capture(frames)
+                st.session_state.event_log.append(
+                    f"Saved {len(frames)} frames to {saved_path.name}"
+                )
+                st.success(
+                    f"Saved {len(frames):,} frames as {saved_path.name}"
+                )
+            except (OSError, ValueError) as exc:
+                st.error(f"Capture save failed: {exc}")
+    with buffer_col:
+        st.info(
+            f"The live buffer currently contains {len(frames):,} of "
+            "5,000 possible frames."
+        )
+
+    saved_capture_paths = list_captures()
+    capture_options: list[Path | None] = [None, *saved_capture_paths]
+    selected_capture = st.selectbox(
+        "Saved capture",
+        capture_options,
+        index=1 if saved_capture_paths else 0,
+        format_func=lambda path: (
+            "No saved capture (live data only)"
+            if path is None
+            else path.stem
+        ),
+    )
+    signal_key = st.selectbox(
+        "Signal",
+        list(TIME_SERIES_SIGNALS),
+        format_func=lambda key: TIME_SERIES_SIGNALS[key]["label"],
+    )
+
+    saved_frames: list[CANFrame] = []
+    if selected_capture is not None:
+        try:
+            saved_frames = cached_load_capture(
+                str(selected_capture),
+                selected_capture.stat().st_mtime_ns,
+            )
+        except (OSError, ValueError) as exc:
+            st.error(f"Capture load failed: {exc}")
+
+    saved_points = decoded_time_series(saved_frames, signal_key)
+    live_points = decoded_time_series(frames, signal_key)
+    combined_points = sorted(
+        [*saved_points, *live_points],
+        key=lambda point: point["timestamp"],
+    )
+
+    saved_metric, live_metric, total_metric = st.columns(3)
+    saved_metric.metric(
+        "Saved signal points",
+        f"{len(saved_points):,}",
+    )
+    live_metric.metric(
+        "Live signal points",
+        f"{len(live_points):,}",
+    )
+    total_metric.metric(
+        "Combined signal points",
+        f"{len(combined_points):,}",
+    )
+
+    if saved_points and live_points:
+        gap_seconds = (
+            live_points[0]["timestamp"] - saved_points[-1]["timestamp"]
+        )
+        if gap_seconds > 0:
+            st.warning(
+                "No CAN data was recorded during the "
+                f"{gap_seconds / 60:.1f}-minute gap. The straight line "
+                "across that interval is visual interpolation, not a "
+                "measurement."
+            )
+
+    signal = TIME_SERIES_SIGNALS[signal_key]
+    value_column = f"{signal['label']} ({signal['unit']})"
+    chart_rows = [
+        {
+            "Time": datetime.fromtimestamp(point["timestamp"]),
+            value_column: point["value"],
+        }
+        for point in combined_points
+    ]
+    if chart_rows:
+        st.line_chart(
+            chart_rows,
+            x="Time",
+            y=value_column,
+            height=450,
+            use_container_width=True,
+        )
+        st.caption(
+            f"Charted {len(combined_points):,} matching telemetry points "
+            f"from {len(saved_frames) + len(frames):,} raw CAN frames."
+        )
+    else:
+        st.info("No matching signal data is available to graph yet.")
 
 with messages_tab:
     controls_left, controls_right = st.columns([1, 4])
