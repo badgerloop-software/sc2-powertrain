@@ -18,21 +18,42 @@ void initIO() {
     pinMode(BATT_POS_CONT_MCU, INPUT);
     pinMode(PPC1_SUPP_INVALID, INPUT);
     pinMode(PPC1_DCDC_INVALID, INPUT);
+
+    // Read the active-low estop before the first CAN status is transmitted.
+    digital_data.estop_mcu = digitalRead(ESTOP_MCU);
+    
+    // Initialize MCU_BATT_EN as push-pull output with explicit mode
     pinMode(MCU_BATT_EN, OUTPUT);
+    digitalWrite(MCU_BATT_EN, 1);
+    
     pinMode(MPPT_CONT_MCU, INPUT);
     pinMode(MC_CONT_MCU, INPUT);
 
-    // Initialize analog pins
+    // Initialize analog pins AFTER digital outputs are set
+    // This prevents ADC initialization from affecting GPIO state
     initADC(ADC1);
 
     if (IOTimer.attachInterruptInterval(IO_UPDATE_PERIOD, readIO)) {
         printf("IO timer started\n");
+        // Ensure the timer interrupt has lower priority than other operations
+        // to prevent it from interrupting critical GPIO writes
+        NVIC_SetPriority(TIM2_IRQn, 3);
     } else {
         printf("Failed to start IO timer\n");
     }
 }
 
 void readIO() {
+    // Debug: log when ADC reads happen
+    static unsigned long lastReadTime = 0;
+    unsigned long currentTime = millis();
+    if (currentTime - lastReadTime > 50) {  // Only print occasionally to avoid spam
+        Serial.print("[ADC_READ @ ");
+        Serial.print(currentTime);
+        Serial.println("ms]");
+        lastReadTime = currentTime;
+    }
+    
     digital_data.batt_neg_cont = digitalRead(BATT_NEG_CONT_MCU);
     digital_data.estop_mcu = digitalRead(ESTOP_MCU);
     digital_data.batt_pos_cont = digitalRead(BATT_POS_CONT_MCU);
