@@ -1,24 +1,17 @@
-#ifndef __IO_MANAGER_H__
-#define __IO_MANAGER_H__
+#ifndef __IO_MANAGEMENT_H__
+#define __IO_MANAGEMENT_H__
 
 #include <Arduino.h>
+#include <HardwareTimer.h>
+// TimerInterrupt_Generic 1.13 expects MICROSEC_FORMAT as a bare name
+#ifndef MICROSEC_FORMAT
+#define MICROSEC_FORMAT TimerFormat_t::MICROSEC_FORMAT
+#endif
 #include "STM32TimerInterrupt_Generic.h"
 #include "adc.h"
+#include "board_config.h"
 
-// Inputs
-#define BATT_NEG_CONT_MCU           PB3
-#define ESTOP_MCU                   PA9
-#define BATT_POS_CONT_MCU           PA10
-#define PPC1_SUPP_INVALID           PB1
-#define PPC1_DCDC_INVALID           PB0
-#define MPPT_CONT_MCU               PB5
-#define MC_CONT_MCU                 PB4
-
-// Outputs
-#define MCU_BATT_EN                 PA8
-
-#define IO_UPDATE_PERIOD 100000 // us
-
+// ------------- TYPES -------------
 
 struct Digital_Data {
     bool batt_neg_cont : 1;     // input
@@ -31,14 +24,17 @@ struct Digital_Data {
     bool mc_cont_mcu : 1;       // input
 };
 
+// ------------- GLOBALS -------------
+
 extern volatile Digital_Data digital_data;
 
-// Analog signals
 extern volatile float i_12v;
 extern volatile float v_12v;
 extern volatile float supp_i;
 extern volatile float batt_i;
 extern volatile float supp_v;
+
+// ------------- FUNCTIONS -------------
 
 // initialize digital and analog pins
 void initIO();
@@ -46,7 +42,7 @@ void initIO();
 // read digital and analog inputs
 void readIO();
 
-// Set the value of output pins
+// set the value of output pins
 void set_mcu_batt_en(bool batt_en);
 
-#endif
+#endif  // __IO_MANAGEMENT_H__
