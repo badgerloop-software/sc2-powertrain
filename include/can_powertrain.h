@@ -16,7 +16,6 @@ struct BpsTelemetry {
 
 // ------------- CLASS -------------
 
-// CAN for this board (IDs in can_ids.h)
 class CanPowertrain : public CANManager {
    private:
     BpsTelemetry bps_telemetry;

@@ -2,11 +2,6 @@
 
 #include "debug.h"
 
-// Who writes what:
-//   readIO (timer) -> digital_data inputs, i_12v, v_12v, supp_i, batt_i, supp_v
-//   can_powertrain -> mcu_batt_en via set_mcu_batt_en
-//   main           -> starts timers via initIO
-
 // ------------- GLOBALS -------------
 
 volatile Digital_Data digital_data;

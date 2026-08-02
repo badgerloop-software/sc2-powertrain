@@ -36,13 +36,8 @@ extern volatile float supp_v;
 
 // ------------- FUNCTIONS -------------
 
-// initialize digital and analog pins
 void initIO();
-
-// read digital and analog inputs
 void readIO();
-
-// set the value of output pins
 void set_mcu_batt_en(bool batt_en);
 
 #endif  // __IO_MANAGEMENT_H__
