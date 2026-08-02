@@ -36,8 +36,8 @@ extern volatile float supp_v;
 
 // ------------- FUNCTIONS -------------
 
-void initIO();
-void readIO();
-void set_mcu_batt_en(bool batt_en);
+void initIO();                              // pins + IO timer
+void readIO();                              // digital + analog into globals
+void set_mcu_batt_en(bool batt_en);         // drive mcu_batt_en output
 
 #endif  // __IO_MANAGEMENT_H__
