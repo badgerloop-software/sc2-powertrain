@@ -14,7 +14,7 @@ static constexpr uint8_t FAULT_STATE_CLEAR = 0x00;
 static constexpr uint8_t FAULT_STATE_LATCHED = 0xA5;
 static constexpr uint8_t FAULT_STATE_CLEAR_ON_RESTART = 0x5A;
 
-static constexpr uint8_t FAULT_CLEAR_PAYLOAD[SC2_CAN_FAULT_CLEAR_DLC] = {
+static constexpr uint8_t FAULT_CLEAR_PAYLOAD[CAN_FAULT_CLEAR_DLC] = {
     0x03, 0x7F, 0x20, 0x22, 0x00, 0x00, 0x00, 0x00};
 
 // ------------- PUBLIC FUNCTIONS -------------
@@ -62,21 +62,21 @@ void CanPowertrain::readHandler(CAN_message_t msg) {
         return;
     }
 
-    if (msg.id == SC2_CAN_BPS_TEMPERATURE_ID && msg.len == SC2_CAN_BPS_TEMPERATURE_DLC) {
+    if (msg.id == CAN_BPS_TEMPERATURE && msg.len == CAN_BPS_TEMPERATURE_DLC) {
         bps_telemetry.lowest_temperature = decodeUint16(msg.buf[0], msg.buf[1]);
         bps_telemetry.highest_temperature = decodeUint16(msg.buf[2], msg.buf[3]);
         if (shouldMonitorBpsFaults()) {
             received_bps_temperature = true;
             updateBpsFault();
         }
-    } else if (msg.id == SC2_CAN_BPS_ELECTRICAL_ID && msg.len == SC2_CAN_BPS_ELECTRICAL_DLC) {
+    } else if (msg.id == CAN_BPS_ELECTRICAL && msg.len == CAN_BPS_ELECTRICAL_DLC) {
         bps_telemetry.highest_cell_voltage = decodeCellVoltage(msg.buf[0], msg.buf[1]);
         bps_telemetry.lowest_cell_voltage = decodeCellVoltage(msg.buf[2], msg.buf[3]);
         const uint16_t raw_current = decodeUint16(msg.buf[4], msg.buf[5]);
         const uint16_t current_magnitude =
-            raw_current >= SC2_CAN_BPS_PACK_CURRENT_ZERO
-                ? raw_current - SC2_CAN_BPS_PACK_CURRENT_ZERO
-                : SC2_CAN_BPS_PACK_CURRENT_ZERO - raw_current;
+            raw_current >= CAN_BPS_PACK_CURRENT_ZERO
+                ? raw_current - CAN_BPS_PACK_CURRENT_ZERO
+                : CAN_BPS_PACK_CURRENT_ZERO - raw_current;
         bps_telemetry.pack_current =
             static_cast<float>(current_magnitude) * BPS_PACK_CURRENT_SCALE_A;
         if (shouldMonitorBpsFaults()) {
@@ -95,11 +95,11 @@ float CanPowertrain::decodeCellVoltage(uint8_t byte_1, uint8_t byte_2) const {
 }
 
 bool CanPowertrain::isFaultClearCommand(const CAN_message_t& msg) const {
-    if (msg.id != SC2_CAN_FAULT_CLEAR_ID || msg.len != SC2_CAN_FAULT_CLEAR_DLC) {
+    if (msg.id != CAN_FAULT_CLEAR || msg.len != CAN_FAULT_CLEAR_DLC) {
         return false;
     }
 
-    for (uint8_t i = 0; i < SC2_CAN_FAULT_CLEAR_DLC; ++i) {
+    for (uint8_t i = 0; i < CAN_FAULT_CLEAR_DLC; ++i) {
         if (msg.buf[i] != FAULT_CLEAR_PAYLOAD[i]) {
             return false;
         }
@@ -169,14 +169,14 @@ void CanPowertrain::sendPowertrainData() {
     }
     const bool active_fault = estop_pressed || bps_fault_latched;
     set_mcu_batt_en(!active_fault);
-    uint8_t status = active_fault ? SC2_CAN_PT_FAULT_MASK : 0x00;
+    uint8_t status = active_fault ? CAN_PT_FAULT_MASK : 0x00;
 
-    sendMessage(SC2_CAN_PT_I_12V_ID, (void*)&i_12v, sizeof(float));
-    sendMessage(SC2_CAN_PT_V_12V_ID, (void*)&v_12v, sizeof(float));
-    sendMessage(SC2_CAN_PT_SUPP_I_ID, (void*)&supp_i, sizeof(float));
-    sendMessage(SC2_CAN_PT_BATT_I_ID, (void*)&batt_i, sizeof(float));
-    sendMessage(SC2_CAN_PT_SUPP_V_ID, (void*)&supp_v, sizeof(float));
-    sendMessage(SC2_CAN_PT_FAULT_STATUS_ID, (void*)&status, sizeof(uint8_t));
+    sendMessage(CAN_PT_I_12V, (void*)&i_12v, sizeof(float));
+    sendMessage(CAN_PT_V_12V, (void*)&v_12v, sizeof(float));
+    sendMessage(CAN_PT_SUPP_I, (void*)&supp_i, sizeof(float));
+    sendMessage(CAN_PT_BATT_I, (void*)&batt_i, sizeof(float));
+    sendMessage(CAN_PT_SUPP_V, (void*)&supp_v, sizeof(float));
+    sendMessage(CAN_PT_FAULT_STATUS, (void*)&status, sizeof(uint8_t));
 }
 
 const BpsTelemetry& CanPowertrain::getBpsTelemetry() const {

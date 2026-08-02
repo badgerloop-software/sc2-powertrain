@@ -16,7 +16,7 @@ struct BpsTelemetry {
 
 // ------------- CLASS -------------
 
-// IDs / DLCs from embedded-pio/can_ids.h (SC2_CAN_*)
+// IDs / DLCs from embedded-pio/can_ids.h (CAN_*)
 class CanPowertrain : public CANManager {
    private:
     BpsTelemetry bps_telemetry;
