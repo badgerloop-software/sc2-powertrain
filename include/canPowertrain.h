@@ -1,6 +1,8 @@
 #ifndef __CAN_POWERTRAIN_H__
 #define __CAN_POWERTRAIN_H__
 
+// CANPowertrain: BPS telem, EEPROM fault latch, pack enable, status 0x001
+
 #include "canmanager.h"
 #include "IOManagement.h"
 #include "powertrainConfig.h"

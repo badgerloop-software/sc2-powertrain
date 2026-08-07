@@ -7,7 +7,7 @@ through an Ewert Energy Systems / Orion BMS CANdapter.
 
 - Connects to the CANdapter virtual COM port at 250 kbit/s CAN
 - Displays every received standard or extended CAN frame
-- Decodes powertrain IDs `0x101`, `0x108`, `0x109`, and `0x505`
+- Decodes powertrain IDs `0x101`, `0x108`, `0x109`, and `0x001`
 - Decodes float telemetry on IDs `0x500` through `0x504`
 - Shows whether the pack SoC is charging, discharging, or holding over a
   rolling 60-second window
@@ -86,7 +86,7 @@ pending clear. Estop is transient and is not stored in EEPROM.
 - `0x108`: two big-endian unsigned temperatures in whole degrees Celsius
 - `0x109`: two big-endian cell voltages at 0.1 mV/bit, followed by pack
   current magnitude at 0.1 A/bit around a raw zero point of `0x8000`
-- `0x505`: byte 0 bit 0 is the combined fault status (`1` means fault)
+- `0x001`: byte 0 bit 0 is the combined fault status (`1` means fault)
 
 Keep `protocol.py` synchronized with `include/powertrainConfig.h` whenever
 the firmware limits or message definitions change.

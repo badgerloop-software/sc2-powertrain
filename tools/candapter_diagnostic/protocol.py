@@ -11,7 +11,7 @@ from typing import Any
 BPS_STATUS_CAN_ID = 0x101
 BPS_TEMPERATURE_CAN_ID = 0x108
 BPS_ELECTRICAL_CAN_ID = 0x109
-POWERTRAIN_FAULT_CAN_ID = 0x505
+POWERTRAIN_FAULT_CAN_ID = 0x001
 FAULT_CLEAR_CAN_ID = 0x7EB
 
 FAULT_CLEAR_PAYLOAD = bytes.fromhex("03 7F 20 22 00 00 00 00")
@@ -381,12 +381,12 @@ def fault_status_rows(latest: dict[int, CANFrame]) -> list[dict[str, Any]]:
 
     status = latest.get(POWERTRAIN_FAULT_CAN_ID)
     if status is None or status.dlc != 1:
-        add("Powertrain combined fault", "0x505 bit 0", "—", None, "0")
+        add("Powertrain combined fault", "0x001 bit 0", "—", None, "0")
     else:
         active = bool(status.data[0] & 0x01)
         add(
             "Powertrain combined fault",
-            "0x505 bit 0",
+            "0x001 bit 0",
             str(int(active)),
             active,
             "0",

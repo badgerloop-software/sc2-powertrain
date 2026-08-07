@@ -362,7 +362,7 @@ with status_tab:
 
     with powertrain_col:
         with st.container(border=True):
-            st.markdown("#### Powertrain · `0x505`")
+            st.markdown("#### Powertrain · `0x001`")
             if powertrain and not powertrain["error"]:
                 is_fault = powertrain["fields"]["Fault active"]
                 if is_fault:
