@@ -1,3 +1,6 @@
+// canPowertrain: BPS telem RX, persistent fault latch, pack enable, status TX
+// Faults stay latched in EEPROM until a clear command and a reboot
+// Status on 0x001: 0x01 means fault (BPS latch or estop)
 #include "canPowertrain.h"
 #include <EEPROM.h>
 
@@ -9,6 +12,7 @@ constexpr uint8_t FAULT_STATE_CLEAR = 0x00;
 constexpr uint8_t FAULT_STATE_LATCHED = 0xA5;
 constexpr uint8_t FAULT_STATE_CLEAR_ON_RESTART = 0x5A;
 
+// Exact 8-byte payload that arms clear-on-next-boot
 constexpr uint8_t FAULT_CLEAR_PAYLOAD[FAULT_CLEAR_CAN_DLC] = {
     0x03, 0x7F, 0x20, 0x22, 0x00, 0x00, 0x00, 0x00
 };
@@ -27,6 +31,7 @@ CANPowertrain::CANPowertrain(CAN_TypeDef* canPort, CAN_PINS pins, int frequency)
       first_bps_message_time(0) {};
 
 void CANPowertrain::initializePersistentFault() {
+    // First boot writes magic, later boots restore latched fault from EEPROM
     const bool storage_initialized =
         EEPROM.read(FAULT_EEPROM_MAGIC_ADDRESS) == FAULT_EEPROM_MAGIC;
 
@@ -38,6 +43,7 @@ void CANPowertrain::initializePersistentFault() {
         const uint8_t stored_state =
             EEPROM.read(FAULT_EEPROM_STATE_ADDRESS);
         if (stored_state == FAULT_STATE_CLEAR_ON_RESTART) {
+            // Clear command was armed so clear latch on this boot
             EEPROM.update(FAULT_EEPROM_STATE_ADDRESS, FAULT_STATE_CLEAR);
             bps_fault_latched = false;
         } else {
@@ -63,6 +69,7 @@ void CANPowertrain::readHandler(CAN_message_t msg) {
         return;
     }
 
+    // 0x108: low and high pack temperature (big-endian uint16, Celsius)
     if (msg.id == BPS_TEMPERATURE_CAN_ID &&
         msg.len == BPS_TEMPERATURE_CAN_DLC) {
         bps_telemetry.lowest_temperature =
@@ -75,6 +82,7 @@ void CANPowertrain::readHandler(CAN_message_t msg) {
         }
     } else if (msg.id == BPS_ELECTRICAL_CAN_ID &&
                msg.len == BPS_ELECTRICAL_CAN_DLC) {
+        // 0x109: high/low cell V and pack current (0x8000 = 0 A midscale)
         bps_telemetry.highest_cell_voltage =
             decodeCellVoltage(msg.buf[0], msg.buf[1]);
         bps_telemetry.lowest_cell_voltage =
@@ -119,6 +127,7 @@ bool CANPowertrain::isFaultClearCommand(const CAN_message_t& msg) const {
 }
 
 void CANPowertrain::handleFaultClearCommand() {
+    // Arm clear-on-restart, latch clears only after reboot
     if (!persistent_fault_initialized) {
         return;
     }
@@ -139,6 +148,7 @@ void CANPowertrain::latchBpsFault() {
 }
 
 bool CANPowertrain::shouldMonitorBpsFaults() {
+    // Ignore out-of-range telem for BPS_FAULT_STARTUP_GRACE_MS after first frame
     const unsigned long current_time = millis();
     if (!bps_startup_grace_started) {
         first_bps_message_time = current_time;
@@ -167,8 +177,7 @@ bool CANPowertrain::isBpsTelemetryOutOfRange() const {
             bps_telemetry.pack_current > BPS_PACK_CURRENT_MAX_A;
     }
 
-    // Current and temperature arrive as unsigned values, so their lower bound
-    // is inherently zero.
+    // Temperature values are unsigned, lower bound is zero by type
     bool temperature_fault = false;
     if (received_bps_temperature) {
         temperature_fault =
@@ -180,22 +189,22 @@ bool CANPowertrain::isBpsTelemetryOutOfRange() const {
 }
 
 void CANPowertrain::sendPowertrainData() {
+    // Estop or latched BPS fault drops MCU_BATT_EN and sets fault flag 0x01
     const bool estop_pressed = !digital_data.estop_mcu;
     if (bps_fault && (!bps_fault_latched || clear_on_restart_armed)) {
         latchBpsFault();
     }
     const bool active_fault = estop_pressed || bps_fault_latched;
     set_mcu_batt_en(!active_fault);
-    uint8_t status =
+    uint8_t fault_flag =
         active_fault ? POWERTRAIN_FAULT_MASK : 0x00;
 
-    // TODO: send messages with their respective CAN IDs
     this->sendMessage(0x500, (void*)&i_12v, sizeof(float));
     this->sendMessage(0x501, (void*)&v_12v, sizeof(float));
     this->sendMessage(0x502, (void*)&supp_i, sizeof(float));
     this->sendMessage(0x503, (void*)&batt_i, sizeof(float));
     this->sendMessage(0x504, (void*)&supp_v, sizeof(float));
-    this->sendMessage(0x505, (void*)&status, sizeof(uint8_t));
+    this->sendMessage(0x001, (void*)&fault_flag, sizeof(uint8_t));
 }
 
 const BpsTelemetry& CANPowertrain::getBpsTelemetry() const {

@@ -36,7 +36,7 @@ class CaptureStoreTests(unittest.TestCase):
                 save_capture([], Path(temporary_directory))
 
     def test_fault_capture_uses_distinct_filename(self) -> None:
-        frame = CANFrame(0x505, b"\x01", time.time())
+        frame = CANFrame(0x001, b"\x01", time.time())
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             saved_path = save_capture(

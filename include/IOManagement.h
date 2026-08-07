@@ -1,6 +1,8 @@
 #ifndef __IO_MANAGER_H__
 #define __IO_MANAGER_H__
 
+// Contactor sense, estop, LV analog telem, MCU_BATT_EN output
+
 #include <Arduino.h>
 #include "STM32TimerInterrupt_Generic.h"
 #include "adc.h"
